@@ -1,5 +1,6 @@
 #ifdef ENABLE_ETHERNET
 #include "ethernet.h"
+#include "web_server.h"
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -122,6 +123,9 @@ void W5500Ethernet::start()
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP,
                                                &ip_event_handler, NULL));
     
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_LOST_IP,
+                                               &ip_event_handler, NULL));
+
     // Without this the driver is installed and attached but never brought up,
     // so no link is ever established.  stop() has the matching esp_eth_stop().
     ESP_ERROR_CHECK(esp_eth_start(eth_handle));
@@ -134,7 +138,12 @@ void W5500Ethernet::stop()
 {
     esp_event_handler_unregister(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler);
     esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_GOT_IP, &ip_event_handler);
+    esp_event_handler_unregister(IP_EVENT, IP_EVENT_ETH_LOST_IP, &ip_event_handler);
 
+    _connected = false;
+#ifndef MIN_CONFIG
+    httpServer.updateNetworkState();
+#endif
     ESP_ERROR_CHECK(esp_eth_stop(eth_handle));
     ESP_ERROR_CHECK(esp_eth_del_netif_glue(eth_glue));
     ESP_ERROR_CHECK(esp_eth_driver_uninstall(eth_handle));
@@ -160,6 +169,9 @@ void W5500Ethernet::eth_event_handler(void *ctx, esp_event_base_t event_base, in
             case ETHERNET_EVENT_DISCONNECTED:
                 ESP_LOGW(TAG, "Ethernet link down");
                 _connected = false;
+#ifndef MIN_CONFIG
+                httpServer.updateNetworkState();
+#endif
                 break;
                 
             case ETHERNET_EVENT_START:
@@ -168,6 +180,10 @@ void W5500Ethernet::eth_event_handler(void *ctx, esp_event_base_t event_base, in
                 
             case ETHERNET_EVENT_STOP:
                 ESP_LOGI(TAG, "Ethernet stopped");
+                _connected = false;
+#ifndef MIN_CONFIG
+                httpServer.updateNetworkState();
+#endif
                 break;
                 
             default:
@@ -187,10 +203,16 @@ void W5500Ethernet::ip_event_handler(void *ctx, esp_event_base_t event_base, int
                 ESP_LOGI(TAG, "IP:      " IPSTR, IP2STR(&ip_info->ip));
                 ESP_LOGI(TAG, "Netmask: " IPSTR, IP2STR(&ip_info->netmask));
                 ESP_LOGI(TAG, "Gateway: " IPSTR, IP2STR(&ip_info->gw));
+#ifndef MIN_CONFIG
+                httpServer.updateNetworkState();
+#endif
                 break;
             }
             case IP_EVENT_ETH_LOST_IP:
                 ESP_LOGI(TAG, "Lost IP address");
+#ifndef MIN_CONFIG
+                httpServer.updateNetworkState();
+#endif
                 break;
             default:
                 break;
